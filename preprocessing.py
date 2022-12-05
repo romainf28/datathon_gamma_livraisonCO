@@ -80,3 +80,15 @@ def add_weather_data(df,data_dir):
         df_weather = pd.read_csv(os.path.join(data_dir,'weather_paris.csv'))
         df_weather['date_time'] = pd.to_datetime(df_weather['date_time'])
         return df.merge(df_weather, left_on = 'Date et heure de comptage', right_on='date_time', how='left').drop(columns=['date_time'])
+
+def get_train_test(df):
+    cut_date = df['Date et heure de comptage'].max()-pd.DateOffset(days=5)
+    df_train = df[df['Date et heure de comptage']<cut_date]
+    df_test = df[df['Date et heure de comptage']>= cut_date]
+    return df_train, df_test
+
+def set_indexes_for_timeseries(df):
+    df = df.set_index('Date et heure de comptage')
+    df = df.asfreq('H', method= 'ffill')
+    df.sort_values('Date et heure de comptage',inplace=True)
+    return df
