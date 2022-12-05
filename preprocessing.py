@@ -7,6 +7,7 @@ def read_csv_files(data_dir,filenames):
 
     for idx, df in enumerate(dfs):
         df.set_index("Date et heure de comptage",drop=True,inplace=True)
+        df.index.names = ['ds']
         df = df.sort_index()
         df['Débit horaire'] = df['Débit horaire'].interpolate()
         df["Taux d'occupation"] = df["Taux d'occupation"].interpolate()
@@ -52,6 +53,12 @@ def is_during_holiday(date,df_holidays):
             return True
     return False
 
+def first_holiday_after(date,sorted_df_holidays):
+    for _,row in sorted_df_holidays.iterrows():
+        start = row['start_date']
+        if start.date() > date:
+            return start.date()
+    raise Exception(f'No holiday after {date}')
 
 def add_holidays(df,data_dir):
     df_bank_holiday = pd.read_csv(os.path.join(data_dir,'jours_feries_metropole.csv'))
@@ -63,6 +70,13 @@ def add_holidays(df,data_dir):
     df_holiday = df_holiday[df_holiday['annee_scolaire'].isin(['2021-2022', '2022-2023'])]
     df_holiday['start_date'] = pd.to_datetime(df_holiday['start_date'])
     df_holiday['end_date'] = pd.to_datetime(df_holiday['end_date'])
+
+    df_holiday = df_holiday.sort_values(by=['start_date'])
     df['Vacances scolaires'] = df['Date'].apply(lambda d : is_during_holiday(d, df_holiday) )
+    df['Prochaines vacances scolaires'] = pd.to_datetime(df['Date'].apply(lambda d : first_holiday_after(d,df_holiday)))
+    df['Durée avant les prochaines vacances scolaires'] = df['Prochaines vacances scolaires'] - df['Date et heure de comptage']
 
-
+def add_weather_data(df,data_dir):
+        df_weather = pd.read_csv(os.path.join(data_dir,'weather_paris.csv'))
+        df_weather['date_time'] = pd.to_datetime(df_weather['date_time'])
+        return df.merge(df_weather, left_on = 'Date et heure de comptage', right_on='date_time', how='left').drop(columns=['date_time'])
