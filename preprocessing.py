@@ -6,12 +6,10 @@ def read_csv_files(data_dir,filenames):
     dfs = [pd.read_csv(os.path.join(data_dir, f), sep=';', index_col=0).assign(filename=f) for f in filenames]
 
     for idx, df in enumerate(dfs):
-        df.set_index("Date et heure de comptage",drop=True,inplace=True)
+        df= convert_dates_to_datetime(df,'Date et heure de comptage')
+        df = df.set_index("Date et heure de comptage",drop=False)
         df.index.names = ['ds']
-        df = df.sort_index()
-        df['Débit horaire'] = df['Débit horaire'].interpolate()
-        df["Taux d'occupation"] = df["Taux d'occupation"].interpolate()
-        
+        df= df.sort_index()
         dfs[idx] = df
     
     return dfs
@@ -40,9 +38,13 @@ def filter_nodes(df):
     return df[mask]
 
 def convert_dates_to_datetime(df,date_col):
-    df[date_col] = pd.to_datetime(df.index,format='%Y-%m-%d %H:%M',utc=True)
+    df[date_col] = pd.to_datetime(df[date_col],format='%Y-%m-%d %H:%M',utc=True)
     df[date_col] = df[date_col].apply(lambda d : d.tz_localize(None) + pd.DateOffset(hours=1))
     return df
+
+def fill_missing_values(df):
+    df['Débit horaire'] = df.apply(lambda x: df[df['Date et heure de comptage'] == (x['Date et heure de comptage'] - pd.offsets.DateOffset(weeks=1))]['Débit horaire'] if pd.isna(x['Débit horaire']) else x['Débit horaire'], axis=1)
+    df["Taux d'occupation"] = df.apply(lambda x: df[df['Date et heure de comptage'] == x['Date et heure de comptage']-  pd.offsets.DateOffset(weeks=1)]["Taux d'occupation"] if pd.isna(x["Taux d'occupation"]) else x["Taux d'occupation"], axis=1)
 
 def is_during_holiday(date,df_holidays):
     for _, row in df_holidays.iterrows():
