@@ -112,8 +112,8 @@ def mechant_ml(df_: pd.DataFrame):
     df_["Durée avant les prochaines vacances scolaires"] = df_[
         "Durée avant les prochaines vacances scolaires"
     ].dt.days
-
-    df, df_mean, df_std = do_datasets(data=df_, unscale_cols=["filter"])
+    
+    df, df_mean, df_std = do_datasets(data=df_.reset_index(drop=True), unscale_cols=["filter"])
 
     WIN_LENGTH = 24 * 5
     batch_size = 128
@@ -168,7 +168,7 @@ def mechant_ml(df_: pd.DataFrame):
     val_performance = {}
     cli = {}
 
-    val_performance["lstm_4"], _, cli["lstm_4"] = training_model(
+    val_performance["lstm"], _, cli["lstm"] = training_model(
         model_generator=lstm_generator(4),
         window_=window,
         model_name="lstm",
