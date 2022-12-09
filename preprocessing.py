@@ -43,8 +43,18 @@ def convert_dates_to_datetime(df,date_col):
     return df
 
 def fill_missing_values(df):
-    df['Débit horaire'] = df.apply(lambda x: df[df['Date et heure de comptage'] == (x['Date et heure de comptage'] - pd.offsets.DateOffset(weeks=1))]['Débit horaire'] if pd.isna(x['Débit horaire']) else x['Débit horaire'], axis=1)
-    df["Taux d'occupation"] = df.apply(lambda x: df[df['Date et heure de comptage'] == x['Date et heure de comptage']-  pd.offsets.DateOffset(weeks=1)]["Taux d'occupation"] if pd.isna(x["Taux d'occupation"]) else x["Taux d'occupation"], axis=1)
+    lst=[]
+    for idx,row in df.iterrows():
+        if pd.isna(row['Débit horaire']):
+            row['Débit horaire'] = df.loc[idx-7*24,'Débit horaire']
+        if pd.isna(row["Taux d'occupation"]):
+            row["Taux d'occupation"] = df.loc[idx-7*24,"Taux d'occupation"]
+        
+        lst.append(row)
+    new_df = pd.DataFrame(lst,columns=df.columns,index=df.index)
+    new_df['Débit horaire'] = new_df['Débit horaire'].interpolate()
+    new_df["Taux d'occupation"] = new_df["Taux d'occupation"].interpolate()
+    return new_df
 
 def is_during_holiday(date,df_holidays):
     for _, row in df_holidays.iterrows():
@@ -79,9 +89,21 @@ def add_holidays(df,data_dir):
     df['Durée avant les prochaines vacances scolaires'] = df['Prochaines vacances scolaires'] - df['Date et heure de comptage']
 
 def add_weather_data(df,data_dir):
+        
         df_weather = pd.read_csv(os.path.join(data_dir,'weather_paris.csv'))
         df_weather['date_time'] = pd.to_datetime(df_weather['date_time'])
+
         return df.merge(df_weather, left_on = 'Date et heure de comptage', right_on='date_time', how='left').drop(columns=['date_time'])
+
+def get_weather_forecast(data_dir):
+    df_weather_forecast = pd.read_csv(os.path.join(data_dir,'weather_forecast_paris.csv'))
+    df_weather_forecast['date'] = pd.to_datetime(df_weather_forecast['date'])
+    df_weather_forecast['date_time'] = df_weather_forecast.apply(lambda x : x['date'] + pd.DateOffset(hours=x['time']/100),axis=1)
+
+    df_weather_forecast = df_weather_forecast[['date_time','humidity','tempC','visibilityKm','cloudcover','precipMM']]
+    df_weather_forecast['visibility'] = df_weather_forecast['visibilityKm']
+    df_weather_forecast = df_weather_forecast.drop(['visibilityKm'],axis=1)
+    return df_weather_forecast
 
 def get_train_test(df):
     cut_date = df['Date et heure de comptage'].max()-pd.DateOffset(days=5)
@@ -90,7 +112,56 @@ def get_train_test(df):
     return df_train, df_test
 
 def set_indexes_for_timeseries(df):
-    df = df.set_index('Date et heure de comptage')
+    df = df.set_index('Date et heure de comptage',drop=False)
     df = df.asfreq('H', method= 'ffill')
-    df.sort_values('Date et heure de comptage',inplace=True)
+    df.sort_index(inplace=True)
     return df
+
+def add_weekday_ohe(df):
+    df['Jour de la semaine'] = pd.to_datetime(df["Date et heure de comptage"]).dt.dayofweek
+    df_ohe = pd.concat([
+        df,
+        pd.get_dummies(df['Jour de la semaine'],prefix='Jour de la semaine')
+    ], axis=1).drop(columns=['Jour de la semaine'])
+    return df_ohe
+
+
+def save_datasets(data_dir):
+    filenames = ['champs-elysees.csv', 'convention.csv', 'saints-peres.csv']
+    dfs = read_csv_files(data_dir, filenames)
+
+    df = pd.concat(dfs)
+
+    df_filtered = filter_nodes(df)
+
+    df_filtered= add_weekday_ohe(df_filtered)
+
+    df_filtered['Date'] = pd.to_datetime(df_filtered["Date et heure de comptage"]).dt.date
+
+    add_holidays(df_filtered,data_dir)
+
+    df_filtered = add_weather_data(df_filtered,data_dir)
+
+    df_filtered = df_filtered[['Date et heure de comptage', 'Débit horaire',
+        "Taux d'occupation","filename",'Jour de la semaine_0', 'Jour de la semaine_1', 'Jour de la semaine_2',
+        'Jour de la semaine_3', 'Jour de la semaine_4', 'Jour de la semaine_5',
+        'Jour de la semaine_6', 'Date', 'Jour férié', 'Vacances scolaires','Durée avant les prochaines vacances scolaires', 'humidity', 'tempC',
+        'visibility', 'cloudcover', 'precipMM']]
+
+    df_ce = df_filtered[df_filtered['filename']=='champs-elysees.csv']
+    df_sts = df_filtered[df_filtered['filename']=='saints-peres.csv']
+    df_conv = df_filtered[df_filtered['filename']=='convention.csv']
+
+    df_ce = fill_missing_values(df_ce)
+    df_sts = fill_missing_values(df_sts)
+    df_conv = fill_missing_values(df_conv)
+
+    df_ce = set_indexes_for_timeseries(df_ce)
+    df_sts = set_indexes_for_timeseries(df_sts)
+    df_conv = set_indexes_for_timeseries(df_conv)
+
+    df_ce.to_csv('dataframes/df_champs_elysees.csv')
+    df_conv.to_csv('dataframes/df_convention.csv')
+    df_sts.to_csv('dataframes/df_saints_peres.csv')
+
+
